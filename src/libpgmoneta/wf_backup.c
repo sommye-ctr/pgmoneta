@@ -109,8 +109,7 @@ basebackup_execute(char* name __attribute__((unused)), struct art* nodes)
    uint32_t start_timeline = 0;
    uint32_t end_timeline = 0;
    char old_label_path[MAX_PATH];
-   int backup_max_rate;
-   int network_max_rate;
+   int max_rate;
    uint64_t biggest_file_size;
    struct main_configuration* config;
    struct message* basebackup_msg = NULL;
@@ -120,8 +119,6 @@ basebackup_execute(char* name __attribute__((unused)), struct art* nodes)
    struct tablespace* tablespaces = NULL;
    struct tablespace* current_tablespace = NULL;
    struct tuple* tup = NULL;
-   struct token_bucket* bucket = NULL;
-   struct token_bucket* network_bucket = NULL;
    struct backup* backup = NULL;
 
    config = (struct main_configuration*)shmem;
@@ -154,27 +151,7 @@ basebackup_execute(char* name __attribute__((unused)), struct art* nodes)
 
    pgmoneta_memory_init();
 
-   backup_max_rate = pgmoneta_get_backup_max_rate(server);
-   if (backup_max_rate)
-   {
-      bucket = (struct token_bucket*)malloc(sizeof(struct token_bucket));
-      if (pgmoneta_token_bucket_init(bucket, backup_max_rate))
-      {
-         pgmoneta_log_error("failed to initialize the token bucket for backup.\n");
-         goto error;
-      }
-   }
-
-   network_max_rate = pgmoneta_get_network_max_rate(server);
-   if (network_max_rate)
-   {
-      network_bucket = (struct token_bucket*)malloc(sizeof(struct token_bucket));
-      if (pgmoneta_token_bucket_init(network_bucket, network_max_rate))
-      {
-         pgmoneta_log_error("failed to initialize the network token bucket for backup.\n");
-         goto error;
-      }
-   }
+   max_rate = pgmoneta_get_max_rate(server);
    usr = -1;
    // find the corresponding user's index of the given server
    for (int i = 0; usr == -1 && i < config->common.number_of_users; i++)
@@ -253,6 +230,7 @@ basebackup_execute(char* name __attribute__((unused)), struct art* nodes)
    tag = pgmoneta_append(tag, label);
 
    pgmoneta_create_base_backup_message(config->common.servers[server].version, false, tag, true,
+                                       max_rate,
                                        config->compression_type, config->compression_level,
                                        &basebackup_msg);
 
@@ -277,7 +255,7 @@ basebackup_execute(char* name __attribute__((unused)), struct art* nodes)
 
    if (config->common.servers[server].version < 15)
    {
-      if (pgmoneta_receive_archive_files(server, ssl, socket, buffer, backup_base, tablespaces, bucket, network_bucket))
+      if (pgmoneta_receive_archive_files(server, ssl, socket, buffer, backup_base, tablespaces))
       {
          pgmoneta_log_error("Backup: Could not backup %s", config->common.servers[server].name);
 
@@ -294,7 +272,7 @@ basebackup_execute(char* name __attribute__((unused)), struct art* nodes)
    }
    else
    {
-      if (pgmoneta_receive_archive_stream(server, ssl, socket, buffer, backup_base, tablespaces, bucket, network_bucket))
+      if (pgmoneta_receive_archive_stream(server, ssl, socket, buffer, backup_base, tablespaces))
       {
          pgmoneta_log_error("Backup: Could not backup %s", config->common.servers[server].name);
 
@@ -425,8 +403,6 @@ basebackup_execute(char* name __attribute__((unused)), struct art* nodes)
    pgmoneta_free_message(basebackup_msg);
    pgmoneta_free_message(tablespace_msg);
    pgmoneta_free_query_response(response);
-   pgmoneta_token_bucket_destroy(bucket);
-   pgmoneta_token_bucket_destroy(network_bucket);
    free(manifest_path);
    free(chkptpos);
    free(tag);
@@ -457,8 +433,6 @@ error:
    pgmoneta_free_tablespaces(tablespaces);
    pgmoneta_free_message(basebackup_msg);
    pgmoneta_free_query_response(response);
-   pgmoneta_token_bucket_destroy(bucket);
-   pgmoneta_token_bucket_destroy(network_bucket);
    free(manifest_path);
    free(chkptpos);
    free(tag);

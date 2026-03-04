@@ -190,8 +190,7 @@ pgmoneta_init_main_configuration(void* shm)
    config->common.log_mode = PGMONETA_LOGGING_MODE_APPEND;
    atomic_init(&config->common.log_lock, STATE_FREE);
 
-   config->backup_max_rate = 0;
-   config->network_max_rate = 0;
+   config->max_rate = 0;
 
    config->verification = PGMONETA_TIME_DISABLED;
 
@@ -296,8 +295,7 @@ pgmoneta_read_main_configuration(void* shm, char* filename)
                   atomic_init(&srv.last_failed_operation_time, 0);
                   memset(srv.wal_shipping, 0, MAX_PATH);
                   srv.workers = -1;
-                  srv.backup_max_rate = -1;
-                  srv.network_max_rate = -1;
+                  srv.max_rate = -1;
 
                   idx_server++;
                }
@@ -1622,11 +1620,11 @@ pgmoneta_read_main_configuration(void* shm, char* filename)
                      unknown = true;
                   }
                }
-               else if (!strcmp(key, "backup_max_rate"))
+               else if (!strcmp(key, "max_rate"))
                {
                   if (!strcmp(section, "pgmoneta"))
                   {
-                     if (as_int(value, &config->backup_max_rate))
+                     if (as_int(value, &config->max_rate))
                      {
                         unknown = true;
                      }
@@ -1639,34 +1637,7 @@ pgmoneta_read_main_configuration(void* shm, char* filename)
                         max = MISC_LENGTH - 1;
                      }
                      memcpy(&srv.name, section, max);
-                     if (as_int(value, &srv.backup_max_rate))
-                     {
-                        unknown = true;
-                     }
-                  }
-                  else
-                  {
-                     unknown = true;
-                  }
-               }
-               else if (!strcmp(key, "network_max_rate"))
-               {
-                  if (!strcmp(section, "pgmoneta"))
-                  {
-                     if (as_int(value, &config->network_max_rate))
-                     {
-                        unknown = true;
-                     }
-                  }
-                  else if (strlen(section) > 0)
-                  {
-                     max = strlen(section);
-                     if (max > MISC_LENGTH - 1)
-                     {
-                        max = MISC_LENGTH - 1;
-                     }
-                     memcpy(&srv.name, section, max);
-                     if (as_int(value, &srv.network_max_rate))
+                     if (as_int(value, &srv.max_rate))
                      {
                         unknown = true;
                      }
@@ -2066,14 +2037,9 @@ pgmoneta_validate_main_configuration(void* shm)
          config->common.servers[i].workers = -1;
       }
 
-      if (config->common.servers[i].backup_max_rate < -1)
+      if (config->common.servers[i].max_rate < -1)
       {
-         config->common.servers[i].backup_max_rate = -1;
-      }
-
-      if (config->common.servers[i].network_max_rate < -1)
-      {
-         config->common.servers[i].network_max_rate = -1;
+         config->common.servers[i].max_rate = -1;
       }
    }
 
@@ -3363,8 +3329,7 @@ add_configuration_response(struct json* res)
    pgmoneta_json_put(res, CONFIGURATION_ARGUMENT_METRICS_KEY_FILE, (uintptr_t)config->metrics_key_file, ValueString);
    pgmoneta_json_put(res, CONFIGURATION_ARGUMENT_METRICS_CA_FILE, (uintptr_t)config->metrics_ca_file, ValueString);
    pgmoneta_json_put(res, CONFIGURATION_ARGUMENT_LIBEV, (uintptr_t)config->libev, ValueString);
-   pgmoneta_json_put(res, CONFIGURATION_ARGUMENT_BACKUP_MAX_RATE, (uintptr_t)config->backup_max_rate, ValueInt64);
-   pgmoneta_json_put(res, CONFIGURATION_ARGUMENT_NETWORK_MAX_RATE, (uintptr_t)config->network_max_rate, ValueInt64);
+   pgmoneta_json_put(res, CONFIGURATION_ARGUMENT_MAX_RATE, (uintptr_t)config->max_rate, ValueInt64);
    pgmoneta_json_put(res, CONFIGURATION_ARGUMENT_MANIFEST, (uintptr_t)"SHA512", ValueString);
    pgmoneta_json_put(res, CONFIGURATION_ARGUMENT_KEEP_ALIVE, (uintptr_t)config->common.keep_alive, ValueBool);
    pgmoneta_json_put(res, CONFIGURATION_ARGUMENT_NODELAY, (uintptr_t)config->common.nodelay, ValueBool);
@@ -3452,8 +3417,7 @@ add_servers_configuration_response(struct json* res)
       pgmoneta_json_put(server_conf, CONFIGURATION_ARGUMENT_HOT_STANDBY_OVERRIDES, (uintptr_t)config->common.servers[i].hot_standby_overrides, ValueString);
       pgmoneta_json_put(server_conf, CONFIGURATION_ARGUMENT_HOT_STANDBY_TABLESPACES, (uintptr_t)config->common.servers[i].hot_standby_tablespaces, ValueString);
       pgmoneta_json_put(server_conf, CONFIGURATION_ARGUMENT_WORKERS, (uintptr_t)config->common.servers[i].workers, ValueInt64);
-      pgmoneta_json_put(server_conf, CONFIGURATION_ARGUMENT_BACKUP_MAX_RATE, (uintptr_t)config->common.servers[i].backup_max_rate, ValueInt64);
-      pgmoneta_json_put(server_conf, CONFIGURATION_ARGUMENT_NETWORK_MAX_RATE, (uintptr_t)config->common.servers[i].network_max_rate, ValueInt64);
+      pgmoneta_json_put(server_conf, CONFIGURATION_ARGUMENT_MAX_RATE, (uintptr_t)config->common.servers[i].max_rate, ValueInt64);
       pgmoneta_json_put(server_conf, CONFIGURATION_ARGUMENT_MANIFEST, (uintptr_t)"SHA512", ValueString);
       pgmoneta_json_put(server_conf, CONFIGURATION_ARGUMENT_TLS_CERT_FILE, (uintptr_t)config->common.servers[i].tls_cert_file, ValueString);
       pgmoneta_json_put(server_conf, CONFIGURATION_ARGUMENT_TLS_CA_FILE, (uintptr_t)config->common.servers[i].tls_ca_file, ValueString);
@@ -4046,16 +4010,9 @@ apply_main_configuration(struct main_configuration* config, struct server* srv, 
             unknown = true;
          }
       }
-      else if (!strcmp(key, "backup_max_rate"))
+      else if (!strcmp(key, "max_rate"))
       {
-         if (as_int(value, &srv->backup_max_rate))
-         {
-            unknown = true;
-         }
-      }
-      else if (!strcmp(key, "network_max_rate"))
-      {
-         if (as_int(value, &srv->network_max_rate))
+         if (as_int(value, &srv->max_rate))
          {
             unknown = true;
          }
@@ -4150,16 +4107,9 @@ apply_main_configuration(struct main_configuration* config, struct server* srv, 
             unknown = true;
          }
       }
-      else if (!strcmp(key, "backup_max_rate"))
+      else if (!strcmp(key, "max_rate"))
       {
-         if (as_int(value, &config->backup_max_rate))
-         {
-            unknown = true;
-         }
-      }
-      else if (!strcmp(key, "network_max_rate"))
-      {
-         if (as_int(value, &config->network_max_rate))
+         if (as_int(value, &config->max_rate))
          {
             unknown = true;
          }
@@ -4270,13 +4220,9 @@ write_config_value(char* buffer, char* config_key, size_t buffer_size)
          {
             snprintf(buffer, buffer_size, "%d", config->storage_engine);
          }
-         else if (!strcmp(key_info.key, "backup_max_rate"))
+         else if (!strcmp(key_info.key, "max_rate"))
          {
-            snprintf(buffer, buffer_size, "%d", config->backup_max_rate);
-         }
-         else if (!strcmp(key_info.key, "network_max_rate"))
-         {
-            snprintf(buffer, buffer_size, "%d", config->network_max_rate);
+            snprintf(buffer, buffer_size, "%d", config->max_rate);
          }
          else if (!strcmp(key_info.key, "verification"))
          {
@@ -4333,13 +4279,9 @@ write_config_value(char* buffer, char* config_key, size_t buffer_size)
                {
                   snprintf(buffer, buffer_size, "%d", srv->workers);
                }
-               else if (!strcmp(key_info.key, "backup_max_rate"))
+               else if (!strcmp(key_info.key, "max_rate"))
                {
-                  snprintf(buffer, buffer_size, "%d", srv->backup_max_rate);
-               }
-               else if (!strcmp(key_info.key, "network_max_rate"))
-               {
-                  snprintf(buffer, buffer_size, "%d", srv->network_max_rate);
+                  snprintf(buffer, buffer_size, "%d", srv->max_rate);
                }
                else if (!strcmp(key_info.key, "retention"))
                {
@@ -5834,8 +5776,7 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
    config->common.number_of_admins = reload->common.number_of_admins;
 
    config->workers = reload->workers;
-   config->backup_max_rate = reload->backup_max_rate;
-   config->network_max_rate = reload->network_max_rate;
+   config->max_rate = reload->max_rate;
 
    /* prometheus */
    atomic_init(&config->common.prometheus.logging_info, 0);
@@ -5929,8 +5870,7 @@ copy_server(struct server* dst, struct server* src)
    /* memcpy(&dst->current_wal_filename[0], &src->current_wal_filename[0], MISC_LENGTH); */
    /* memcpy(&dst->current_wal_lsn[0], &src->current_wal_lsn[0], MISC_LENGTH); */
    dst->workers = src->workers;
-   dst->backup_max_rate = src->backup_max_rate;
-   dst->network_max_rate = src->network_max_rate;
+   dst->max_rate = src->max_rate;
 
    if (restart_string("tls_cert_file", dst->tls_cert_file, src->tls_cert_file))
    {
