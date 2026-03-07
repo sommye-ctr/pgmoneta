@@ -99,6 +99,17 @@ pgmoneta_combine_backups(int server, char* label, char* base, char* input_dir, c
                          struct backup* bck, struct json* manifest, bool incremental, bool combine_as_is);
 
 /**
+ * Validate restore integrity before performing restore
+ * @param server The server
+ * @param backup The backup
+ * @param labels The backup labels (for incremental chain)
+ * @param nodes The nodes containing restore context
+ * @return 0 on success, restore error code if validation fails
+ */
+int
+pgmoneta_validate_restore(int server, struct backup* backup, struct deque* labels, struct art* nodes);
+
+/**
  * Rollup backups into a new backup
  * @param server The server
  * @param newest_label The newest backup label

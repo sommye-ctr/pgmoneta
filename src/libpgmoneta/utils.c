@@ -3873,6 +3873,91 @@ pgmoneta_wal_file_name(uint32_t tli, size_t segno, int segsize)
    return f;
 }
 
+char*
+pgmoneta_normalize_wal_filename(char* filename)
+{
+   char* normalized = NULL;
+
+   if (filename == NULL)
+   {
+      return NULL;
+   }
+
+   if (pgmoneta_is_encrypted(filename))
+   {
+      pgmoneta_strip_extension(filename, &normalized);
+   }
+   else
+   {
+      normalized = strdup(filename);
+   }
+
+   if (normalized != NULL && pgmoneta_is_compressed(normalized))
+   {
+      char* temp = normalized;
+      normalized = NULL;
+      pgmoneta_strip_extension(temp, &normalized);
+      free(temp);
+   }
+
+   return normalized;
+}
+
+char*
+pgmoneta_get_backup_file_path(char* base_path, int compression, int encryption)
+{
+   char* full_path = NULL;
+   char temp_path[MAX_PATH];
+
+   if (base_path == NULL)
+   {
+      return NULL;
+   }
+
+   if (pgmoneta_exists(base_path))
+   {
+      return strdup(base_path);
+   }
+
+   memset(temp_path, 0, sizeof(temp_path));
+   snprintf(temp_path, sizeof(temp_path), "%s", base_path);
+
+   switch (compression)
+   {
+      case COMPRESSION_CLIENT_GZIP:
+      case COMPRESSION_SERVER_GZIP:
+         strncat(temp_path, ".gz", sizeof(temp_path) - strlen(temp_path) - 1);
+         break;
+      case COMPRESSION_CLIENT_ZSTD:
+      case COMPRESSION_SERVER_ZSTD:
+         strncat(temp_path, ".zstd", sizeof(temp_path) - strlen(temp_path) - 1);
+         break;
+      case COMPRESSION_CLIENT_LZ4:
+      case COMPRESSION_SERVER_LZ4:
+         strncat(temp_path, ".lz4", sizeof(temp_path) - strlen(temp_path) - 1);
+         break;
+      case COMPRESSION_CLIENT_BZIP2:
+         strncat(temp_path, ".bz2", sizeof(temp_path) - strlen(temp_path) - 1);
+         break;
+      case COMPRESSION_NONE:
+      default:
+         // No compression extension
+         break;
+   }
+
+   if (encryption > ENCRYPTION_NONE)
+   {
+      strncat(temp_path, ".aes", sizeof(temp_path) - strlen(temp_path) - 1);
+   }
+
+   if (pgmoneta_exists(temp_path))
+   {
+      full_path = strdup(temp_path);
+   }
+
+   return full_path;
+}
+
 int
 pgmoneta_read_wal(char* directory, char** wal)
 {
